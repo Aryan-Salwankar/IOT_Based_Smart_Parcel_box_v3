@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Locker Control Panel</title>
+    <!-- 
+      Paho MQTT Client Library: This script provides the necessary functions 
+      to connect to an MQTT broker over WebSockets.
+    -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.1.0/paho-mqtt.min.js"></script>
+    
+    <!-- CSS styles are embedded directly within the HTML for a single-file solution -->
+    <style>
+        /* General body styling */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+            box-sizing: border-box;
+        }
+
+        /* Main container for the control panel */
+        .container {
+            background-color: #ffffff;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 450px;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        /* Header style */
+        h1 {
+            color: #1a73e8;
+            margin-bottom: 0.5rem;
+            font-size: 1.8rem;
+        }
+
+        /* Live clock style */
+        .live-clock {
+            font-size: 0.9rem;
+            color: #495057;
+            margin-bottom: 1.5rem;
+            height: 1em;
+        }
+
+        /* Styling for the status display box */
+        .status-box {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+        }
+        .status-box h2 {
+            margin-top: 0;
+            font-size: 1.2rem;
+            color: #495057;
+            border-bottom: 1px solid #e9ecef;
+            padding-bottom: 0.75rem;
+            margin-bottom: 1rem;
+        }
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 1.1rem;
+            padding: 0.5rem 0;
+        }
+        .status-item span:first-child {
+            font-weight: 600;
+        }
+
+        /* Last updated timestamp style */
+        .last-updated {
+            margin-top: 1rem;
+            padding-top: 0.75rem;
+            border-top: 1px solid #e9ecef;
+            font-size: 0.85rem;
+            color: #6c757d;
+            text-align: right;
+        }
+
+        /* Dynamic status value styling */
+        .status-value {
+            font-weight: bold;
+            padding: 6px 14px;
+            border-radius: 16px;
+            color: #fff;
+            min-width: 80px;
+            text-align: center;
+        }
+        .status-value.open, .status-value.present { background-color: #28a745; }
+        .status-value.closed, .status-value.empty { background-color: #dc3545; }
+        .status-value.unknown { background-color: #6c757d; }
+
+        /* Main control button styling */
+        .control-panel button {
+            background: linear-gradient(145deg, #1a73e8, #1558b3);
+            color: white;
+            border: none;
+            padding: 16px 32px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            width: 100%;
+            transition: background-color 0.3s, transform 0.1s, box-shadow 0.3s;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+        }
+        .control-panel button:hover:not(:disabled) {
+            background: linear-gradient(145deg, #1c81ff, #1765c9);
+            box-shadow: 0 6px 15px rgba(0, 0, 0, 0.15);
+        }
+        .control-panel button:active:not(:disabled) {
+            transform: scale(0.98);
+        }
+        .control-panel button:disabled {
+            background-color: #adb5bd;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
+        /* Connection status indicator styling */
+        #connectionStatus {
+            margin-top: 1.5rem;
+            font-weight: 500;
+            padding: 12px;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+        .status-connected { color: #155724; background-color: #d4edda; border: 1px solid #c3e6cb;}
+        .status-disconnected { color: #721c24; background-color: #f8d7da; border: 1px solid #f5c6cb;}
+        .status-connecting { color: #856404; background-color: #fff3cd; border: 1px solid #ffeeba;}
+
+        /* Collapsible settings section */
+        .collapsible {
+            margin-top: 1.5rem;
+        }
+        .collapsible-header {
+            cursor: pointer;
+            color: #6c757d;
+            font-size: 0.9rem;
+            padding: 8px;
+            user-select: none;
+        }
+        .collapsible-content {
+            display: none; /* Hidden by default */
+            overflow: hidden;
+            margin-top: 1rem;
+            text-align: left;
+            border-top: 1px solid #eee;
+            padding-top: 1rem;
+        }
+        .collapsible-content label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+            color: #495057;
+        }
+        .collapsible-content input {
+            width: calc(100% - 22px);
+            padding: 10px;
+            margin-bottom: 12px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+        }
+        .collapsible-content button {
+            width: 100%;
+            padding: 12px;
+            background-color: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Smart Locker Control</h1>
+    <div id="liveClock" class="live-clock"></div>
+
+    <!-- Section to display the real-time status of the locker -->
+    <div class="status-box">
+        <h2>Device Status</h2>
+        <div class="status-item">
+            <span>Door:</span>
+            <span id="doorStatus" class="status-value unknown">Unknown</span>
+        </div>
+        <div class="status-item">
+            <span>Parcel:</span>
+            <span id="parcelStatus" class="status-value unknown">Unknown</span>
+        </div>
+        <div class="last-updated">
+            Last updated: <span id="lastUpdatedTime">never</span>
+        </div>
+    </div>
+
+    <!-- Section for user actions -->
+    <div class="control-panel">
+        <button id="openButton" onclick="sendOpenCommand()" disabled>OPEN LOCK</button>
+    </div>
+
+    <!-- Displays the current MQTT connection status -->
+    <div id="connectionStatus" class="status-disconnected">Disconnected</div>
+
+    <!-- Collapsible section for MQTT connection settings -->
+    <div class="collapsible">
+        <div class="collapsible-header" onclick="toggleConfig()">▼ Connection Settings</div>
+        <div class="collapsible-content" id="config-content">
+            <label for="broker">Broker Host:</label>
+            <input type="text" id="broker" value="dd4770b26a7d4a7291371cea6d74c060.s1.eu.hivemq.cloud">
+            
+            <label for="port">WebSocket Port:</label>
+            <!-- Note: Port 8884 is the standard for Secure WebSockets with HiveMQ Cloud -->
+            <input type="text" id="port" value="8884">
+            
+            <label for="user">Username:</label>
+            <input type="text" id="user" value="admin">
+            
+            <label for="pass">Password:</label>
+            <input type="password" id="pass" value="Pass@123">
+            
+            <button onclick="startConnect()">Connect</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- Configuration ---
+    const statusTopic = "smartLocker/status";
+    const controlTopic = "smartLocker/control";
+
+    // --- UI Elements ---
+    const doorStatusElem = document.getElementById('doorStatus');
+    const parcelStatusElem = document.getElementById('parcelStatus');
+    const connectionStatusElem = document.getElementById('connectionStatus');
+    const openButton = document.getElementById('openButton');
+    const lastUpdatedElem = document.getElementById('lastUpdatedTime');
+    const clockElem = document.getElementById('liveClock');
+
+    // --- MQTT Client ---
+    let client;
+
+    /**
+     * Tries to establish a connection to the MQTT broker.
+     */
+    function startConnect() {
+        const hostname = document.getElementById("broker").value;
+        const port = parseInt(document.getElementById("port").value, 10);
+        const username = document.getElementById("user").value;
+        const password = document.getElementById("pass").value;
+        const clientID = "web-client-" + Date.now(); // Unique client ID
+
+        if (client && client.isConnected()) {
+            console.log("Already connected. Disconnecting first.");
+            client.disconnect();
+        }
+
+        updateConnectionStatus("Connecting...", "connecting");
+        
+        // Initialize the MQTT client
+        client = new Paho.Client(hostname, port, clientID);
+
+        // Set callback handlers
+        client.onConnectionLost = onConnectionLost;
+        client.onMessageArrived = onMessageArrived;
+
+        // Connection options
+        const connectOptions = {
+            userName: username,
+            password: password,
+            useSSL: true, // Use SSL for a secure connection
+            onSuccess: onConnect,
+            onFailure: onConnectFailure,
+            reconnect: true, // Automatically try to reconnect
+            keepAliveInterval: 20
+        };
+
+        // Attempt to connect
+        client.connect(connectOptions);
+    }
+
+    /**
+     * Handles successful connection to the broker.
+     */
+    function onConnect() {
+        console.log("Connected to MQTT Broker!");
+        updateConnectionStatus("Connected", "connected");
+        openButton.disabled = false;
+        
+        // Subscribe to the status topic to receive updates
+        client.subscribe(statusTopic, { qos: 0 });
+        console.log("Subscribed to topic: " + statusTopic);
+    }
+
+    /**
+     * Handles connection failures.
+     * @param {object} response - The error response object from Paho.
+     */
+    function onConnectFailure(response) {
+        console.error("Connection Failed: " + response.errorMessage);
+        updateConnectionStatus(`Failed: ${response.errorMessage}`, "disconnected");
+        openButton.disabled = true;
+    }
+
+    /**
+     * Handles lost connections.
+     * @param {object} responseObject - The error response object.
+     */
+    function onConnectionLost(responseObject) {
+        if (responseObject.errorCode !== 0) {
+            console.error("Connection Lost: " + responseObject.errorMessage);
+            updateConnectionStatus("Connection Lost!", "disconnected");
+            openButton.disabled = true;
+        }
+    }
+
+    /**
+     * Handles incoming MQTT messages.
+     * @param {Paho.Message} message - The incoming message object.
+     */
+    function onMessageArrived(message) {
+        const topic = message.destinationName;
+        const payload = message.payloadString;
+        console.log(`Message Arrived on topic ${topic}: ${payload}`);
+
+        if (topic === statusTopic) {
+            try {
+                // Parse the JSON payload from the device
+                const data = JSON.parse(payload);
+                if (data.door !== undefined && data.parcel !== undefined) {
+                    const now = new Date();
+                    const timestamp = now.toLocaleTimeString('en-IN', { hour12: false });
+                    updateStatusUI(data.door, data.parcel, timestamp);
+                }
+            } catch (e) {
+                console.error("Failed to parse JSON from payload:", e);
+            }
+        }
+    }
+
+    /**
+     * Sends the 'OPEN' command to the control topic.
+     */
+    function sendOpenCommand() {
+        if (client && client.isConnected()) {
+            const message = new Paho.Message("OPEN");
+            message.destinationName = controlTopic;
+            message.qos = 0;
+            client.send(message);
+            console.log("Sent 'OPEN' command to topic: " + controlTopic);
+        } else {
+            console.warn("Cannot send command, client is not connected.");
+            alert("Not connected. Please connect to the MQTT broker first.");
+        }
+    }
+
+    /**
+     * Updates the UI elements to reflect the latest status.
+     * @param {string} doorState - The state of the door ('Open' or 'Closed').
+     * @param {string} parcelState - The state of the parcel ('Present' or 'Empty').
+     * @param {string} timestamp - The time the update was received.
+     */
+    function updateStatusUI(doorState, parcelState, timestamp) {
+        // Update Door Status
+        doorStatusElem.textContent = doorState;
+        doorStatusElem.className = 'status-value ' + doorState.toLowerCase();
+
+        // Update Parcel Status
+        parcelStatusElem.textContent = parcelState;
+        parcelStatusElem.className = 'status-value ' + parcelState.toLowerCase();
+
+        // Update timestamp
+        lastUpdatedElem.textContent = timestamp;
+    }
+    
+    /**
+     * Updates the connection status indicator div.
+     * @param {string} text - The text to display.
+     * @param {string} statusClass - The CSS class to apply ('connected', 'disconnected', 'connecting').
+     */
+    function updateConnectionStatus(text, statusClass) {
+        connectionStatusElem.textContent = text;
+        connectionStatusElem.className = `status-${statusClass}`;
+    }
+
+    /**
+     * Toggles the visibility of the connection settings panel.
+     */
+    function toggleConfig() {
+        const content = document.getElementById('config-content');
+        if (content.style.display === "block") {
+            content.style.display = "none";
+        } else {
+            content.style.display = "block";
+        }
+    }
+
+    /**
+     * Updates the live clock every second.
+     */
+    function updateClock() {
+        const now = new Date();
+        const timeString = now.toLocaleTimeString('en-IN', { hour12: false });
+        const dateString = now.toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        clockElem.textContent = `${dateString}, ${timeString}`;
+    }
+
+    // Attempt to connect automatically when the page loads.
+    window.onload = () => {
+        startConnect();
+        updateClock(); // Initialize clock immediately
+        setInterval(updateClock, 1000); // Update clock every second
+    };
+
+</script>
+</body>
+</html>
+
